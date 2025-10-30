@@ -1,6 +1,6 @@
 {
   "name": "zeck-cli",
-  "version": "1.0.2",
+  "version": "1.0.3",
   "description": "",
   "license": "ISC",
   "author": "",
@@ -13,7 +13,7 @@
     "build": "tsc && tsc-alias",
     "dev": "tsx watch lib/cli.ts",
     "codemerge": "node dist/cli.js",
-    "publisher": "npx pub --bump-package --build --build-zip --clean --push",
+    "publisher": "npx pub --bump-package --build --build-zip --clean --push --branch develop",
     "prepublishOnly": "npm run build"
   },
   "dependencies": {
