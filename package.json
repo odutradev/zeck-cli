@@ -7,6 +7,10 @@
   "type": "commonjs",
   "main": "index.js",
   "scripts": {
-    "test": "echo \"Error: no test specified\" && exit 1"
+    "build": "tsc && tsc-alias",
+    "dev": "tsx watch lib/cli.ts",
+    "codemerge": "node dist/cli.js",
+    "publish": "nxp pub --bump-package --build --build-zip --clean --push --npm-publish",
+    "prepublishOnly": "npm run build"
   }
 }
