@@ -5,12 +5,19 @@
   "license": "ISC",
   "author": "",
   "type": "commonjs",
-  "main": "index.js",
+  "main": "dist/index.js",
   "scripts": {
     "build": "tsc && tsc-alias",
     "dev": "tsx watch lib/cli.ts",
     "codemerge": "node dist/cli.js",
     "publish": "nxp pub --bump-package --build --build-zip --clean --push --npm-publish",
     "prepublishOnly": "npm run build"
-  }
+  },
+  "engines": {
+    "node": ">=16.0.0"
+  },
+  "files": [
+    "dist/**/*",
+    "bin/**/*"
+  ]
 }
