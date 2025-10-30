@@ -1,9 +1,9 @@
 #!/usr/bin/env node
 
-import { Command } from 'commander';
+import { fileURLToPath, pathToFileURL } from 'url';
 import { readFileSync, readdirSync } from 'fs';
 import { dirname, join, extname } from 'path';
-import { fileURLToPath, pathToFileURL } from 'url';
+import { Command } from 'commander';
 
 import { Logger } from './utils/logger.js';
 
@@ -25,7 +25,7 @@ class CLI {
   private setupProgram(): void {
     const packagePath = join(__dirname, '../package.json');
     const packageJson = JSON.parse(readFileSync(packagePath, 'utf-8'));
-    this.program.name('codemerge').description(packageJson.description).version(packageJson.version);
+    this.program.name('zeck').description(packageJson.description).version(packageJson.version);
   }
 
   private async registerCommands(): Promise<void> {
