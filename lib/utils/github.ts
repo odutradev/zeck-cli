@@ -1,16 +1,10 @@
-import { FileResource } from './file.js';
-import { PathResource } from './path.js';
+import config from '../config/github.js';
 
 interface GithubConfig {
   templatesUrl: string;
 }
 
 export class GithubResource {
-  private static getConfig(): GithubConfig {
-    const configPath = PathResource.getPackagePath(import.meta.url, 'config', 'github.json');
-    return FileResource.readJson<GithubConfig>(configPath);
-  }
-
   private static convertToRawUrl(url: string): string {
     return url
       .replace('github.com', 'raw.githubusercontent.com')
@@ -18,7 +12,6 @@ export class GithubResource {
   }
 
   public static async fetchTemplates<T>(): Promise<T> {
-    const config = this.getConfig();
     const rawUrl = this.convertToRawUrl(config.templatesUrl);
     
     const response = await fetch(rawUrl);
