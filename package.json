@@ -6,6 +6,9 @@
   "author": "",
   "type": "commonjs",
   "main": "dist/index.js",
+  "bin": {
+    "zeck": "bin/zeck-cli.js"
+  },
   "scripts": {
     "build": "tsc && tsc-alias",
     "dev": "tsx watch lib/cli.ts",
