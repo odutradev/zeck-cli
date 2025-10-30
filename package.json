@@ -13,7 +13,7 @@
     "build": "tsc && tsc-alias",
     "dev": "tsx watch lib/cli.ts",
     "codemerge": "node dist/cli.js",
-    "publish": "nxp pub --bump-package --build --build-zip --clean --push --npm-publish",
+    "publish": "nxp pub --bump-package --build --build-zip --clean",
     "prepublishOnly": "npm run build"
   },
     "dependencies": {
