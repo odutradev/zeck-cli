@@ -2,11 +2,16 @@ import inquirer from 'inquirer';
 
 type PromptType = 'input' | 'number' | 'confirm' | 'list' | 'rawlist' | 'expand' | 'checkbox' | 'password' | 'editor';
 
+interface Choice {
+  name: string;
+  value: any;
+}
+
 interface PromptConfig {
   name?: string;
   message: string;
   type?: PromptType;
-  choices?: string[];
+  choices?: (string | Choice)[];
   default?: any;
   validate?: (value: any) => boolean | string;
 }

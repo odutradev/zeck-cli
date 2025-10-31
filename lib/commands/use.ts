@@ -1,25 +1,30 @@
 import { Command } from 'commander';
 
-import { GithubResource } from '../utils/github.js';
+import { PromptResource } from '../utils/prompt.js';
 import { Logger } from '../utils/logger.js';
+import axios from 'axios';
+
+interface Module {
+  name: string;
+  description: string;
+}
 
 interface Template {
   name: string;
-  description?: string;
-  url?: string;
-  [key: string]: any;
+  description: string;
+  url: string;
+  modules?: Module[];
 }
 
 interface TemplatesData {
-  templates?: Template[];
-  [key: string]: any;
+  [category: string]: Template[];
 }
 
 export class UseCommand {
   public register(program: Command): void {
     program
       .command('use')
-      .description('Fetch and display available templates from GitHub')
+      .description('Select and use a project template')
       .action(() => this.execute());
   }
 
@@ -27,41 +32,81 @@ export class UseCommand {
     try {
       Logger.info('Fetching templates from GitHub...');
       
-      const data = await GithubResource.fetchTemplates<TemplatesData>();
+      const response = await axios.get('https://raw.githubusercontent.com/odutradev/zeck-templates/master/templates.json');
+      const data = response.data;
+
+      if (!data || typeof data !== 'object' || Array.isArray(data)) {
+        throw new Error('Invalid templates data format');
+      }
       
-      this.displayTemplates(data);
+      const category = await this.selectCategory(data);
+      const templates = data[category];
+      
+      if (!templates || templates.length === 0) {
+        Logger.warning(`No templates found in category: ${category}`);
+        return;
+      }
+
+      const template = await this.selectTemplate(templates);
+      
+      await this.handleTemplateSelection(template);
     } catch (error) {
-      Logger.error(error instanceof Error ? error.message : 'Failed to fetch templates');
+      Logger.error(error instanceof Error ? error.message : 'Failed to process template selection');
       process.exit(1);
     }
   }
 
-  private displayTemplates(data: TemplatesData): void {
-    if (data.templates && Array.isArray(data.templates)) {
-      this.displayAsTable(data.templates);
-    } else {
-      this.displayAsJson(data);
-    }
-  }
-
-  private displayAsTable(templates: Template[]): void {
-    if (templates.length === 0) {
-      Logger.warning('No templates found');
-      return;
+  private async selectCategory(data: TemplatesData): Promise<string> {
+    const categories = Object.keys(data);
+    
+    if (categories.length === 0) {
+      throw new Error('No categories found');
     }
 
-    const head = ['Name', 'Description'];
-    const colWidths = [30, 70];
-    const rows = templates.map(template => [
-      template.name || 'N/A',
-      template.description || 'No description'
-    ]);
+    if (categories.length === 1) {
+      Logger.info(`Using category: ${categories[0]}`);
+      return categories[0];
+    }
 
-    Logger.table(head, colWidths, rows);
-    Logger.success(`Found ${templates.length} template(s)`);
+    const choices = categories.map(cat => ({
+      name: cat,
+      value: cat
+    }));
+
+    const category = await PromptResource.ask({
+      type: 'list',
+      message: 'Select a project category:',
+      choices
+    });
+
+    return category;
   }
 
-  private displayAsJson(data: any): void {
-    Logger.plain(JSON.stringify(data, null, 2));
+  private async selectTemplate(templates: Template[]): Promise<Template> {
+    const choices = templates.map(t => ({
+      name: `${t.name} - ${t.description}`,
+      value: t
+    }));
+
+    const template = await PromptResource.ask({
+      type: 'list',
+      message: 'Select a template:',
+      choices
+    });
+
+    return template;
+  }
+
+  private async handleTemplateSelection(template: Template): Promise<void> {
+    Logger.success(`Selected template: ${template.name}`);
+    Logger.info(`Description: ${template.description}`);
+    Logger.info(`URL: ${template.url}`);
+
+    if (template.modules && template.modules.length > 0) {
+      Logger.info('Available modules:');
+      template.modules.forEach(module => {
+        Logger.plain(`  - ${module.name}: ${module.description}`);
+      });
+    }
   }
 }
