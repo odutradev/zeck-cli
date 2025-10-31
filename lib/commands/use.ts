@@ -1,6 +1,7 @@
 import { Command } from 'commander';
 
 import { PromptResource } from '../utils/prompt.js';
+import { ProjectResource } from '../utils/project.js';
 import githubConfigData from '../config/github.js';
 import { Logger } from '../utils/logger.js';
 import axios from 'axios';
@@ -22,14 +23,17 @@ interface TemplatesData {
 }
 
 export class UseCommand {
+  private static readonly GITHUB_REPO = 'https://github.com/odutradev/zeck-templates.git';
+
   public register(program: Command): void {
     program
       .command('use')
       .description('Select and use a project template')
-      .action(() => this.execute());
+      .argument('[path]', 'Project path (default: template name, "." for current directory)')
+      .action((targetPath?: string) => this.execute(targetPath));
   }
 
-  private async execute(): Promise<void> {
+  private async execute(targetPath?: string): Promise<void> {
     try {
       Logger.info('Fetching templates from GitHub...');
       
@@ -50,7 +54,9 @@ export class UseCommand {
 
       const template = await this.selectTemplate(templates);
       
-      await this.handleTemplateSelection(template);
+      const selectedModules = await this.handleModuleSelection(template);
+
+      await this.downloadAndSetup(template, targetPath, selectedModules);
     } catch (error) {
       Logger.error(error instanceof Error ? error.message : 'Failed to process template selection');
       process.exit(1);
@@ -113,22 +119,63 @@ export class UseCommand {
     return selectedModules;
   }
 
-  private async handleTemplateSelection(template: Template): Promise<void> {
-    Logger.success(`Selected template: ${template.name}`);
+  private async handleModuleSelection(template: Template): Promise<Module[]> {
+    if (!template.modules || template.modules.length === 0) {
+      return [];
+    }
+
+    const selectedModules = await this.selectModules(template.modules);
+
+    if (selectedModules.length === 0) {
+      Logger.info('No modules selected');
+      return [];
+    }
+
+    Logger.success('Selected modules:');
+    selectedModules.forEach(module => {
+      Logger.plain(`  - ${module.name}: ${module.description}`);
+    });
+
+    return selectedModules;
+  }
+
+  private async downloadAndSetup(
+    template: Template,
+    targetPath: string | undefined,
+    selectedModules: Module[]
+  ): Promise<void> {
+    Logger.info(`Selected template: ${template.name}`);
     Logger.info(`Description: ${template.description}`);
-    Logger.info(`URL: ${template.url}`);
 
-    if (template.modules && template.modules.length > 0) {
-      const selectedModules = await this.selectModules(template.modules);
+    const destination = ProjectResource.resolveDestination(targetPath, template.name);
 
-      if (selectedModules.length === 0) {
-        Logger.info('No modules selected');
-        return;
-      }
+    Logger.info(`\nCreating project at: ${destination}`);
 
-      Logger.success('Selected modules:');
+    await ProjectResource.validateDestination(destination);
+
+    Logger.info('Downloading template...');
+    
+    await ProjectResource.createFromTemplate(
+      UseCommand.GITHUB_REPO,
+      template.url,
+      destination
+    );
+
+    Logger.success(`\nProject created successfully!`);
+    
+    if (targetPath !== '.') {
+      Logger.info('\nNext steps:');
+      Logger.plain(`   cd ${destination.split('/').pop()}`);
+      Logger.plain('   npm install');
+    } else {
+      Logger.info('\nNext steps:');
+      Logger.plain('   npm install');
+    }
+
+    if (selectedModules.length > 0) {
+      Logger.info('\nRemember to install selected modules:');
       selectedModules.forEach(module => {
-        Logger.plain(`  - ${module.name}: ${module.description}`);
+        Logger.plain(`   npm install ${module.name}`);
       });
     }
   }
