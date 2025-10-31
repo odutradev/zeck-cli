@@ -1,3 +1,5 @@
-export default {
-  "templatesUrl": "https://github.com/odutradev/zeck-templates/blob/master/templates.json"
-}
+const githubConfigData = {
+  templateURL: "https://raw.githubusercontent.com/odutradev/zeck-templates/master/templates.json"
+};
+
+export default githubConfigData

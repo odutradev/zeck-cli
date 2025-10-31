@@ -1,6 +1,7 @@
 import { Command } from 'commander';
 
 import { PromptResource } from '../utils/prompt.js';
+import githubConfigData from '../config/github.js';
 import { Logger } from '../utils/logger.js';
 import axios from 'axios';
 
@@ -32,7 +33,7 @@ export class UseCommand {
     try {
       Logger.info('Fetching templates from GitHub...');
       
-      const response = await axios.get('https://raw.githubusercontent.com/odutradev/zeck-templates/master/templates.json');
+      const response = await axios.get(githubConfigData.templateURL);
       const data = response.data;
 
       if (!data || typeof data !== 'object' || Array.isArray(data)) {
