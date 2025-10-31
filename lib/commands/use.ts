@@ -39,7 +39,7 @@ export class UseCommand {
       if (!data || typeof data !== 'object' || Array.isArray(data)) {
         throw new Error('Invalid templates data format');
       }
-      
+
       const category = await this.selectCategory(data);
       const templates = data[category];
       
@@ -98,14 +98,36 @@ export class UseCommand {
     return template;
   }
 
+  private async selectModules(modules: Module[]): Promise<Module[]> {
+    const choices = modules.map(m => ({
+      name: `${m.name} - ${m.description}`,
+      value: m
+    }));
+
+    const selectedModules = await PromptResource.ask({
+      type: 'checkbox',
+      message: 'Select modules to include:',
+      choices
+    });
+
+    return selectedModules;
+  }
+
   private async handleTemplateSelection(template: Template): Promise<void> {
     Logger.success(`Selected template: ${template.name}`);
     Logger.info(`Description: ${template.description}`);
     Logger.info(`URL: ${template.url}`);
 
     if (template.modules && template.modules.length > 0) {
-      Logger.info('Available modules:');
-      template.modules.forEach(module => {
+      const selectedModules = await this.selectModules(template.modules);
+
+      if (selectedModules.length === 0) {
+        Logger.info('No modules selected');
+        return;
+      }
+
+      Logger.success('Selected modules:');
+      selectedModules.forEach(module => {
         Logger.plain(`  - ${module.name}: ${module.description}`);
       });
     }
