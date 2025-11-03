@@ -127,11 +127,11 @@ export class UseCommand {
     const selectedModules = await this.selectModules(template.modules);
 
     if (selectedModules.length === 0) {
-      Logger.info('No modules selected');
+      Logger.plain('No modules selected');
       return [];
     }
 
-    Logger.success('Selected modules:');
+    Logger.plain('Selected modules:');
     selectedModules.forEach(module => {
       Logger.plain(`  - ${module.name}: ${module.description}`);
     });
@@ -144,12 +144,12 @@ export class UseCommand {
     targetPath: string | undefined,
     selectedModules: Module[]
   ): Promise<void> {
-    Logger.info(`Selected template: ${template.name}`);
-    Logger.info(`Description: ${template.description}`);
+    Logger.plain(`Selected template: ${template.name}`);
+    Logger.plain(`Description: ${template.description}`);
 
     const destination = ProjectResource.resolveDestination(targetPath, template.name);
 
-    Logger.info(`\nCreating project at: ${destination}`);
+    Logger.info(`Creating project at: ${destination}`);
 
     await ProjectResource.validateDestination(destination);
 
@@ -161,19 +161,17 @@ export class UseCommand {
       destination
     );
 
-    Logger.success(`\nProject created successfully!`);
+    Logger.success(`Project created successfully!`);
     
     if (targetPath !== '.') {
-      Logger.info('\nNext steps:');
+      Logger.plain('Next steps:');
       Logger.plain(`   cd ${destination.split('/').pop()}`);
-      Logger.plain('   npm install');
     } else {
-      Logger.info('\nNext steps:');
-      Logger.plain('   npm install');
+      Logger.plain('Next steps:');
     }
 
     if (selectedModules.length > 0) {
-      Logger.info('\nRemember to install selected modules:');
+      Logger.info('Remember to install selected modules:');
       selectedModules.forEach(module => {
         Logger.plain(`   npm install ${module.name}`);
       });
