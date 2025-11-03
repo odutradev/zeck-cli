@@ -13,7 +13,7 @@
     "build": "tsc && tsc-alias",
     "dev": "tsx watch lib/cli.ts",
     "zeck": "node dist/cli.js",
-    "publisher": "npx pub --bump-package --build --build-zip --clean --push --branch develop",
+    "publisher": "npx pub --bump-package --build --build-zip --clean --push --npm-publish",
     "prepublishOnly": "npm run build"
   },
   "dependencies": {
