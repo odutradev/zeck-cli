@@ -9,6 +9,10 @@
   "bin": {
     "zeck": "bin/zeck-cli.js"
   },
+  "exports": {
+    ".": "./dist/index.js",
+    "./modifier": "./dist/modifier.js"
+  },
   "scripts": {
     "build": "tsc && tsc-alias",
     "dev": "tsx watch lib/cli.ts",
