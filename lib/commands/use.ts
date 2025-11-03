@@ -2,13 +2,18 @@ import { Command } from 'commander';
 
 import { PromptResource } from '../utils/prompt.js';
 import { ProjectResource } from '../utils/project.js';
+import { ModifierResource, ModifierAction, ModifierInstruction } from '../utils/modifier.js';
+import { FileResource } from '../utils/file.js';
+import { PathResource } from '../utils/path.js';
 import githubConfigData from '../config/github.js';
 import { Logger } from '../utils/logger.js';
 import axios from 'axios';
+import { rm } from 'fs/promises';
 
 interface Module {
   name: string;
   description: string;
+  path: string;
 }
 
 interface Template {
@@ -20,6 +25,19 @@ interface Template {
 
 interface TemplatesData {
   [category: string]: Template[];
+}
+
+interface ModuleInstructions {
+  instructions: Array<{
+    path: string;
+    action: string;
+    content?: string;
+    pattern?: string;
+    replacement?: string;
+    componentName?: string;
+    propName?: string;
+    propValue?: string;
+  }>;
 }
 
 export class UseCommand {
@@ -161,7 +179,11 @@ export class UseCommand {
       destination
     );
 
-    Logger.success(`Project created successfully!`);
+    Logger.success('Project created successfully!');
+
+    if (selectedModules.length > 0) {
+      await this.processModules(destination, selectedModules);
+    }
     
     if (targetPath !== '.') {
       Logger.plain('Next steps:');
@@ -175,6 +197,57 @@ export class UseCommand {
       selectedModules.forEach(module => {
         Logger.plain(`   npm install ${module.name}`);
       });
+    }
+  }
+
+  private async processModules(destination: string, modules: Module[]): Promise<void> {
+    Logger.info('Processing modules...');
+
+    for (const module of modules) {
+      try {
+        Logger.info(`Installing module: ${module.name}`);
+        
+        const modulePath = PathResource.join(destination, module.path);
+        
+        if (!FileResource.exists(modulePath)) {
+          Logger.warning(`Module configuration not found: ${module.path}`);
+          continue;
+        }
+
+        const moduleConfig = FileResource.readJson<ModuleInstructions>(modulePath);
+        
+        const instructions: ModifierInstruction[] = moduleConfig.instructions.map(inst => ({
+          path: PathResource.join(destination, inst.path),
+          action: inst.action as ModifierAction,
+          content: inst.content,
+          pattern: inst.pattern,
+          replacement: inst.replacement,
+          componentName: inst.componentName,
+          propName: inst.propName,
+          propValue: inst.propValue
+        }));
+
+        ModifierResource.processInstructions(instructions);
+        
+        Logger.success(`Module ${module.name} installed successfully`);
+      } catch (error) {
+        Logger.error(`Failed to install module ${module.name}: ${error instanceof Error ? error.message : 'Unknown error'}`);
+      }
+    }
+
+    await this.cleanupModulesFolder(destination);
+  }
+
+  private async cleanupModulesFolder(destination: string): Promise<void> {
+    try {
+      const modulesPath = PathResource.join(destination, '.modules');
+      
+      if (FileResource.exists(modulesPath)) {
+        await rm(modulesPath, { recursive: true, force: true });
+        Logger.success('Cleaned up modules configuration');
+      }
+    } catch (error) {
+      Logger.warning('Failed to cleanup .modules folder');
     }
   }
 }
