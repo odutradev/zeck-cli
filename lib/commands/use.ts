@@ -14,6 +14,7 @@ interface Module {
   name: string;
   description: string;
   path: string;
+  excludes?: string[];
 }
 
 interface Template {
@@ -137,6 +138,30 @@ export class UseCommand {
     return selectedModules;
   }
 
+  private filterExcludedModules(selectedModules: Module[]): Module[] {
+    const moduleNames = selectedModules.map(m => m.name);
+    const excludedModules = new Set<string>();
+
+    selectedModules.forEach(module => {
+      if (module.excludes) {
+        module.excludes.forEach(excludeName => {
+          if (moduleNames.includes(excludeName)) {
+            excludedModules.add(excludeName);
+          }
+        });
+      }
+    });
+
+    if (excludedModules.size > 0) {
+      Logger.warning('The following modules will be ignored due to conflicts:');
+      excludedModules.forEach(name => {
+        Logger.plain(`  - ${name}`);
+      });
+    }
+
+    return selectedModules.filter(m => !excludedModules.has(m.name));
+  }
+
   private async handleModuleSelection(template: Template): Promise<Module[]> {
     if (!template.modules || template.modules.length === 0) {
       return [];
@@ -149,12 +174,19 @@ export class UseCommand {
       return [];
     }
 
+    const filteredModules = this.filterExcludedModules(selectedModules);
+
+    if (filteredModules.length === 0) {
+      Logger.warning('All selected modules were excluded due to conflicts');
+      return [];
+    }
+
     Logger.plain('Selected modules:');
-    selectedModules.forEach(module => {
+    filteredModules.forEach(module => {
       Logger.plain(`  - ${module.name}: ${module.description}`);
     });
 
-    return selectedModules;
+    return filteredModules;
   }
 
   private async downloadAndSetup(
