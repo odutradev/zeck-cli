@@ -191,13 +191,7 @@ export class UseCommand {
     } else {
       Logger.plain('Next steps:');
     }
-
-    if (selectedModules.length > 0) {
-      Logger.info('Remember to install selected modules:');
-      selectedModules.forEach(module => {
-        Logger.plain(`   npm install ${module.name}`);
-      });
-    }
+    Logger.plain('npm install');
   }
 
   private async processModules(destination: string, modules: Module[]): Promise<void> {
