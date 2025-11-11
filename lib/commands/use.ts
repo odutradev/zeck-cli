@@ -1,4 +1,6 @@
 import { Command } from 'commander';
+import { exec } from 'child_process';
+import { promisify } from 'util';
 
 import { PromptResource } from '../utils/prompt.js';
 import { ProjectResource } from '../utils/project.js';
@@ -9,6 +11,8 @@ import githubConfigData from '../config/github.js';
 import { Logger } from '../utils/logger.js';
 import axios from 'axios';
 import { rm } from 'fs/promises';
+
+const execAsync = promisify(exec);
 
 interface Module {
   name: string;
@@ -217,13 +221,31 @@ export class UseCommand {
       await this.processModules(destination, selectedModules);
     }
     
+    Logger.plain('Next steps:');
     if (targetPath !== '.') {
-      Logger.plain('Next steps:');
       Logger.plain(`   cd ${destination.split('/').pop()}`);
-    } else {
-      Logger.plain('Next steps:');
     }
-    Logger.plain('npm install');
+    Logger.plain('   npm install');
+
+    await this.promptOpenVSCode(destination);
+  }
+
+  private async promptOpenVSCode(projectPath: string): Promise<void> {
+    try {
+      const openVSCode = await PromptResource.ask({
+        type: 'confirm',
+        message: 'Would you like to open this project in VSCode?',
+        default: true
+      });
+
+      if (openVSCode) {
+        Logger.info('Opening VSCode...');
+        await execAsync(`code "${projectPath}"`);
+        Logger.success('VSCode opened successfully!');
+      }
+    } catch (error) {
+      Logger.warning('Could not open VSCode. Make sure VSCode is installed and added to PATH.');
+    }
   }
 
   private async processModules(destination: string, modules: Module[]): Promise<void> {
