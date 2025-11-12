@@ -6,6 +6,7 @@ import { dirname, join, extname } from 'path';
 import { Command } from 'commander';
 
 import { Logger } from './utils/logger.js';
+import { UpdaterResource } from './utils/updater.js';
 
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = dirname(__filename);
@@ -64,6 +65,7 @@ class CLI {
   }
 
   public async run(): Promise<void> {
+    await UpdaterResource.checkForUpdates();
     await this.registerCommands();
     this.program.parse(process.argv);
   }
