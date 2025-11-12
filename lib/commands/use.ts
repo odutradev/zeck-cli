@@ -7,6 +7,7 @@ import { ProjectResource } from '../utils/project.js';
 import { ModifierResource, ModifierAction, ModifierInstruction } from '../utils/modifier.js';
 import { FileResource } from '../utils/file.js';
 import { PathResource } from '../utils/path.js';
+import { EnvironmentResource } from '../utils/environment.js';
 import githubConfigData from '../config/github.js';
 import { Logger } from '../utils/logger.js';
 import axios from 'axios';
@@ -60,6 +61,21 @@ export class UseCommand {
 
   private async execute(targetPath?: string): Promise<void> {
     try {
+      Logger.step('Validating environment...');
+      const validation = await EnvironmentResource.validate();
+      
+      if (!validation.valid) {
+        EnvironmentResource.displayValidationResult(validation);
+        process.exit(1);
+      }
+
+      if (validation.warnings.length > 0) {
+        EnvironmentResource.displayValidationResult(validation);
+      }
+
+      Logger.stepSuccess('Environment validated');
+      Logger.newLine();
+
       const response = await axios.get(githubConfigData.templateURL);
       const data = response.data;
 
