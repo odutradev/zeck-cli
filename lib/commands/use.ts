@@ -4,7 +4,7 @@ import { promisify } from 'util';
 
 import { PromptResource } from '../utils/prompt.js';
 import { ProjectResource } from '../utils/project.js';
-import { ModifierResource, ModifierAction, ModifierInstruction } from '../utils/modifier.js';
+import { ModifierResource, ModifierAction, ModifierInstruction, ModifierContext } from '../utils/modifier.js';
 import { FileResource } from '../utils/file.js';
 import { PathResource } from '../utils/path.js';
 import { EnvironmentResource } from '../utils/environment.js';
@@ -45,6 +45,7 @@ interface ModuleInstructions {
     componentName?: string;
     propName?: string;
     propValue?: string;
+    condition?: any;
   }>;
 }
 
@@ -292,6 +293,12 @@ export class UseCommand {
   }
 
   private async processModules(destination: string, modules: Module[]): Promise<void> {
+    const moduleNames = modules.map(m => m.name);
+    const context: ModifierContext = {
+      selectedModules: moduleNames,
+      projectRoot: destination
+    };
+
     for (const module of modules) {
       try {
         const modulePath = PathResource.join(destination, module.path);
@@ -311,11 +318,17 @@ export class UseCommand {
           replacement: inst.replacement,
           componentName: inst.componentName,
           propName: inst.propName,
-          propValue: inst.propValue
+          propValue: inst.propValue,
+          condition: inst.condition
         }));
 
-        ModifierResource.processInstructions(instructions);
-        Logger.plain(`  ✓ ${module.name}`);
+        const result = ModifierResource.processInstructions(instructions, context);
+        
+        if (result.skipped > 0) {
+          Logger.plain(`  ✓ ${module.name} (${result.executed} applied, ${result.skipped} skipped)`);
+        } else {
+          Logger.plain(`  ✓ ${module.name}`);
+        }
       } catch (error) {
         Logger.plain(`  ✗ ${module.name} (${error instanceof Error ? error.message : 'error'})`);
       }
