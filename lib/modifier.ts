@@ -1,2 +1,14 @@
-export { ModifierResource, ModifierAction } from './utils/modifier.js';
-export type { ModifierInstruction } from './utils/modifier.js';
+export { 
+  ModifierResource, 
+  ModifierAction,
+  ConditionType,
+  ConditionOperator,
+  LogicOperator
+} from './utils/modifier.js';
+
+export type { 
+  ModifierInstruction,
+  Condition,
+  ConditionGroup,
+  ModifierContext
+} from './utils/modifier.js';
