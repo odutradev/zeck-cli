@@ -60,8 +60,6 @@ export class UseCommand {
 
   private async execute(targetPath?: string): Promise<void> {
     try {
-      Logger.info('Fetching templates from GitHub...');
-      
       const response = await axios.get(githubConfigData.templateURL);
       const data = response.data;
 
@@ -73,17 +71,17 @@ export class UseCommand {
       const templates = data[category];
       
       if (!templates || templates.length === 0) {
-        Logger.warning(`No templates found in category: ${category}`);
+        Logger.error('No templates found in this category');
         return;
       }
 
       const template = await this.selectTemplate(templates);
-      
       const selectedModules = await this.handleModuleSelection(template);
 
+      Logger.newLine();
       await this.downloadAndSetup(template, targetPath, selectedModules);
     } catch (error) {
-      Logger.error(error instanceof Error ? error.message : 'Failed to process template selection');
+      Logger.error(error instanceof Error ? error.message : 'Failed to process template');
       process.exit(1);
     }
   }
@@ -96,7 +94,6 @@ export class UseCommand {
     }
 
     if (categories.length === 1) {
-      Logger.info(`Using category: ${categories[0]}`);
       return categories[0];
     }
 
@@ -105,13 +102,11 @@ export class UseCommand {
       value: cat
     }));
 
-    const category = await PromptResource.ask({
+    return await PromptResource.ask({
       type: 'list',
       message: 'Select a project category:',
       choices
     });
-
-    return category;
   }
 
   private async selectTemplate(templates: Template[]): Promise<Template> {
@@ -120,13 +115,11 @@ export class UseCommand {
       value: t
     }));
 
-    const template = await PromptResource.ask({
+    return await PromptResource.ask({
       type: 'list',
       message: 'Select a template:',
       choices
     });
-
-    return template;
   }
 
   private async selectModules(modules: Module[]): Promise<Module[]> {
@@ -135,13 +128,11 @@ export class UseCommand {
       value: m
     }));
 
-    const selectedModules = await PromptResource.ask({
+    return await PromptResource.ask({
       type: 'checkbox',
       message: 'Select modules to include:',
       choices
     });
-
-    return selectedModules;
   }
 
   private addIncludedModules(selectedModules: Module[], allModules: Module[]): Module[] {
@@ -165,10 +156,8 @@ export class UseCommand {
     selectedModules.forEach(module => addIncludes(module));
 
     if (addedModuleNames.size > 0) {
-      Logger.info('The following modules were automatically included:');
-      addedModuleNames.forEach(name => {
-        Logger.plain(`  + ${name}`);
-      });
+      Logger.item('Auto-included dependencies:', 'dim');
+      addedModuleNames.forEach(name => Logger.listItem(name, 'dim'));
     }
 
     return Array.from(finalModules);
@@ -189,10 +178,8 @@ export class UseCommand {
     });
 
     if (excludedModules.size > 0) {
-      Logger.warning('The following modules will be ignored due to conflicts:');
-      excludedModules.forEach(name => {
-        Logger.plain(`  - ${name}`);
-      });
+      Logger.item('Excluded due to conflicts:', 'warning');
+      excludedModules.forEach(name => Logger.listItem(name, 'warning'));
     }
 
     return selectedModules.filter(m => !excludedModules.has(m.name));
@@ -214,24 +201,24 @@ export class UseCommand {
     const selectedModules = await this.selectModules(template.modules);
 
     if (selectedModules.length === 0) {
-      Logger.plain('No modules selected');
       return [];
     }
 
+    Logger.newLine();
     const modulesWithIncludes = this.addIncludedModules(selectedModules, template.modules);
     const filteredModules = this.filterExcludedModules(modulesWithIncludes);
 
     if (filteredModules.length === 0) {
-      Logger.warning('All selected modules were excluded due to conflicts');
+      Logger.error('All modules were excluded due to conflicts');
       return [];
     }
 
     const sortedModules = this.sortModulesByPriority(filteredModules);
 
-    Logger.plain('Modules to be installed (in order):');
+    Logger.item('Installation order:', 'info');
     sortedModules.forEach((module, index) => {
-      const priorityLabel = module.priority ? ` [Priority: ${module.priority}]` : '';
-      Logger.plain(`  ${index + 1}. ${module.name}: ${module.description}${priorityLabel}`);
+      const priority = module.priority ? ` (P${module.priority})` : '';
+      Logger.listItem(`${module.name}${priority}`);
     });
 
     return sortedModules;
@@ -242,34 +229,32 @@ export class UseCommand {
     targetPath: string | undefined,
     selectedModules: Module[]
   ): Promise<void> {
-    Logger.plain(`Selected template: ${template.name}`);
-    Logger.plain(`Description: ${template.description}`);
-
     const destination = ProjectResource.resolveDestination(targetPath, template.name);
-
-    Logger.info(`Creating project at: ${destination}`);
 
     await ProjectResource.validateDestination(destination);
 
-    Logger.info('Downloading template...');
-    
+    Logger.step('Downloading template...');
     await ProjectResource.createFromTemplate(
       UseCommand.GITHUB_REPO,
       template.url,
       destination
     );
-
-    Logger.success('Project created successfully!');
+    Logger.stepSuccess('Template downloaded');
 
     if (selectedModules.length > 0) {
+      Logger.step(`Installing ${selectedModules.length} module(s)...`);
       await this.processModules(destination, selectedModules);
+      Logger.stepSuccess('Modules installed');
     }
-    
+
+    Logger.newLine();
+    Logger.success(`Project created at: ${destination}`);
+    Logger.newLine();
     Logger.plain('Next steps:');
     if (targetPath !== '.') {
-      Logger.plain(`   cd ${destination.split('/').pop()}`);
+      Logger.plain(`  cd ${destination.split('/').pop()}`);
     }
-    Logger.plain('   npm install');
+    Logger.plain('  npm install');
 
     await this.promptOpenVSCode(destination);
   }
@@ -278,31 +263,25 @@ export class UseCommand {
     try {
       const openVSCode = await PromptResource.ask({
         type: 'confirm',
-        message: 'Would you like to open this project in VSCode?',
+        message: 'Open project in VSCode?',
         default: true
       });
 
       if (openVSCode) {
-        Logger.info('Opening VSCode...');
         await execAsync(`code "${projectPath}"`);
-        Logger.success('VSCode opened successfully!');
       }
     } catch (error) {
-      Logger.warning('Could not open VSCode. Make sure VSCode is installed and added to PATH.');
+      Logger.warning('VSCode not found in PATH');
     }
   }
 
   private async processModules(destination: string, modules: Module[]): Promise<void> {
-    Logger.info('Processing modules...');
-
     for (const module of modules) {
       try {
-        Logger.info(`Installing module: ${module.name}`);
-        
         const modulePath = PathResource.join(destination, module.path);
         
         if (!FileResource.exists(modulePath)) {
-          Logger.warning(`Module configuration not found: ${module.path}`);
+          Logger.warning(`  ✗ ${module.name} (config not found)`);
           continue;
         }
 
@@ -320,10 +299,9 @@ export class UseCommand {
         }));
 
         ModifierResource.processInstructions(instructions);
-        
-        Logger.success(`Module ${module.name} installed successfully`);
+        Logger.plain(`  ✓ ${module.name}`);
       } catch (error) {
-        Logger.error(`Failed to install module ${module.name}: ${error instanceof Error ? error.message : 'Unknown error'}`);
+        Logger.plain(`  ✗ ${module.name} (${error instanceof Error ? error.message : 'error'})`);
       }
     }
 
@@ -336,10 +314,9 @@ export class UseCommand {
       
       if (FileResource.exists(modulesPath)) {
         await rm(modulesPath, { recursive: true, force: true });
-        Logger.success('Cleaned up modules configuration');
       }
     } catch (error) {
-      Logger.warning('Failed to cleanup .modules folder');
+      // Silent cleanup failure
     }
   }
 }
