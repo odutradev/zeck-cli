@@ -19,6 +19,8 @@ interface Module {
   description: string;
   path: string;
   excludes?: string[];
+  includes?: string[];
+  priority?: number;
 }
 
 interface Template {
@@ -142,6 +144,36 @@ export class UseCommand {
     return selectedModules;
   }
 
+  private addIncludedModules(selectedModules: Module[], allModules: Module[]): Module[] {
+    const moduleMap = new Map(allModules.map(m => [m.name, m]));
+    const finalModules = new Set<Module>(selectedModules);
+    const addedModuleNames = new Set<string>();
+
+    const addIncludes = (module: Module) => {
+      if (module.includes) {
+        for (const includeName of module.includes) {
+          const includedModule = moduleMap.get(includeName);
+          if (includedModule && !finalModules.has(includedModule)) {
+            finalModules.add(includedModule);
+            addedModuleNames.add(includeName);
+            addIncludes(includedModule);
+          }
+        }
+      }
+    };
+
+    selectedModules.forEach(module => addIncludes(module));
+
+    if (addedModuleNames.size > 0) {
+      Logger.info('The following modules were automatically included:');
+      addedModuleNames.forEach(name => {
+        Logger.plain(`  + ${name}`);
+      });
+    }
+
+    return Array.from(finalModules);
+  }
+
   private filterExcludedModules(selectedModules: Module[]): Module[] {
     const moduleNames = selectedModules.map(m => m.name);
     const excludedModules = new Set<string>();
@@ -166,6 +198,14 @@ export class UseCommand {
     return selectedModules.filter(m => !excludedModules.has(m.name));
   }
 
+  private sortModulesByPriority(modules: Module[]): Module[] {
+    return modules.sort((a, b) => {
+      const priorityA = a.priority ?? 0;
+      const priorityB = b.priority ?? 0;
+      return priorityB - priorityA;
+    });
+  }
+
   private async handleModuleSelection(template: Template): Promise<Module[]> {
     if (!template.modules || template.modules.length === 0) {
       return [];
@@ -178,19 +218,23 @@ export class UseCommand {
       return [];
     }
 
-    const filteredModules = this.filterExcludedModules(selectedModules);
+    const modulesWithIncludes = this.addIncludedModules(selectedModules, template.modules);
+    const filteredModules = this.filterExcludedModules(modulesWithIncludes);
 
     if (filteredModules.length === 0) {
       Logger.warning('All selected modules were excluded due to conflicts');
       return [];
     }
 
-    Logger.plain('Selected modules:');
-    filteredModules.forEach(module => {
-      Logger.plain(`  - ${module.name}: ${module.description}`);
+    const sortedModules = this.sortModulesByPriority(filteredModules);
+
+    Logger.plain('Modules to be installed (in order):');
+    sortedModules.forEach((module, index) => {
+      const priorityLabel = module.priority ? ` [Priority: ${module.priority}]` : '';
+      Logger.plain(`  ${index + 1}. ${module.name}: ${module.description}${priorityLabel}`);
     });
 
-    return filteredModules;
+    return sortedModules;
   }
 
   private async downloadAndSetup(
