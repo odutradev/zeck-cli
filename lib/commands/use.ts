@@ -57,10 +57,11 @@ export class UseCommand {
       .command('use')
       .description('Select and use a project template')
       .argument('[path]', 'Project path (default: template name, "." for current directory)')
-      .action((targetPath?: string) => this.execute(targetPath));
+      .option('--verbose', 'Show detailed information about each instruction and condition')
+      .action((targetPath?: string, options?: { verbose?: boolean }) => this.execute(targetPath, options?.verbose || false));
   }
 
-  private async execute(targetPath?: string): Promise<void> {
+  private async execute(targetPath: string | undefined, verbose: boolean): Promise<void> {
     try {
       Logger.step('Validating environment...');
       const validation = await EnvironmentResource.validate();
@@ -96,7 +97,7 @@ export class UseCommand {
       const selectedModules = await this.handleModuleSelection(template);
 
       Logger.newLine();
-      await this.downloadAndSetup(template, targetPath, selectedModules);
+      await this.downloadAndSetup(template, targetPath, selectedModules, verbose);
     } catch (error) {
       Logger.error(error instanceof Error ? error.message : 'Failed to process template');
       process.exit(1);
@@ -244,7 +245,8 @@ export class UseCommand {
   private async downloadAndSetup(
     template: Template,
     targetPath: string | undefined,
-    selectedModules: Module[]
+    selectedModules: Module[],
+    verbose: boolean
   ): Promise<void> {
     const destination = ProjectResource.resolveDestination(targetPath, template.name);
 
@@ -260,7 +262,7 @@ export class UseCommand {
 
     if (selectedModules.length > 0) {
       Logger.step(`Installing ${selectedModules.length} module(s)...`);
-      await this.processModules(destination, selectedModules);
+      await this.processModules(destination, selectedModules, verbose);
       Logger.stepSuccess('Modules installed');
     }
 
@@ -292,15 +294,22 @@ export class UseCommand {
     }
   }
 
-  private async processModules(destination: string, modules: Module[]): Promise<void> {
+  private async processModules(destination: string, modules: Module[], verbose: boolean): Promise<void> {
     const moduleNames = modules.map(m => m.name);
     const context: ModifierContext = {
       selectedModules: moduleNames,
-      projectRoot: destination
+      projectRoot: destination,
+      verbose
     };
 
     for (const module of modules) {
       try {
+        if (verbose) {
+          Logger.newLine();
+          Logger.info(`Processing module: ${module.name}`);
+          Logger.item(`Config path: ${module.path}`, 'dim');
+        }
+
         const modulePath = PathResource.join(destination, module.path);
         
         if (!FileResource.exists(modulePath)) {
@@ -324,10 +333,15 @@ export class UseCommand {
 
         const result = ModifierResource.processInstructions(instructions, context);
         
-        if (result.skipped > 0) {
-          Logger.plain(`  ✓ ${module.name} (${result.executed} applied, ${result.skipped} skipped)`);
+        if (!verbose) {
+          if (result.skipped > 0) {
+            Logger.plain(`  ✓ ${module.name} (${result.executed} applied, ${result.skipped} skipped)`);
+          } else {
+            Logger.plain(`  ✓ ${module.name}`);
+          }
         } else {
-          Logger.plain(`  ✓ ${module.name}`);
+          Logger.newLine();
+          Logger.success(`Module ${module.name} completed: ${result.executed} applied, ${result.skipped} skipped`);
         }
       } catch (error) {
         Logger.plain(`  ✗ ${module.name} (${error instanceof Error ? error.message : 'error'})`);
@@ -345,7 +359,6 @@ export class UseCommand {
         await rm(modulesPath, { recursive: true, force: true });
       }
     } catch (error) {
-      // Silent cleanup failure
     }
   }
 }
