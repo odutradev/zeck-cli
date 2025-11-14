@@ -1,5 +1,6 @@
 import { readFileSync, writeFileSync, unlinkSync, existsSync, mkdirSync } from 'fs';
 import { dirname } from 'path';
+import { Logger } from './logger.js';
 
 export enum ModifierAction {
   CREATE_FILE = 'CREATE_FILE',
@@ -64,6 +65,12 @@ export interface ModifierInstruction {
 export interface ModifierContext {
   selectedModules: string[];
   projectRoot: string;
+  verbose?: boolean;
+}
+
+interface ConditionEvaluationResult {
+  passed: boolean;
+  reason: string;
 }
 
 export class ModifierResource {
@@ -189,56 +196,150 @@ export class ModifierResource {
     condition: Condition,
     context: ModifierContext,
     targetPath: string
-  ): boolean {
+  ): ConditionEvaluationResult {
     switch (condition.type) {
-      case ConditionType.MODULE_EXISTS:
-        return context.selectedModules.includes(condition.value || '');
+      case ConditionType.MODULE_EXISTS: {
+        const moduleName = condition.value || '';
+        const passed = context.selectedModules.includes(moduleName);
+        return {
+          passed,
+          reason: passed 
+            ? `Module '${moduleName}' is selected`
+            : `Module '${moduleName}' is not selected`
+        };
+      }
 
-      case ConditionType.MODULE_NOT_EXISTS:
-        return !context.selectedModules.includes(condition.value || '');
+      case ConditionType.MODULE_NOT_EXISTS: {
+        const moduleName = condition.value || '';
+        const passed = !context.selectedModules.includes(moduleName);
+        return {
+          passed,
+          reason: passed 
+            ? `Module '${moduleName}' is not selected`
+            : `Module '${moduleName}' is selected`
+        };
+      }
 
-      case ConditionType.PATTERN_EXISTS:
+      case ConditionType.PATTERN_EXISTS: {
         try {
           const target = condition.target || targetPath;
-          if (!existsSync(target)) return false;
+          if (!existsSync(target)) {
+            return {
+              passed: false,
+              reason: `File '${target}' does not exist`
+            };
+          }
           const content = this.readFile(target);
-          return content.includes(condition.value || '');
-        } catch {
-          return false;
+          const pattern = condition.value || '';
+          const passed = content.includes(pattern);
+          return {
+            passed,
+            reason: passed 
+              ? `Pattern '${pattern}' found in file`
+              : `Pattern '${pattern}' not found in file`
+          };
+        } catch (error) {
+          return {
+            passed: false,
+            reason: `Error reading file: ${error instanceof Error ? error.message : 'unknown error'}`
+          };
         }
+      }
 
-      case ConditionType.PATTERN_NOT_EXISTS:
+      case ConditionType.PATTERN_NOT_EXISTS: {
         try {
           const target = condition.target || targetPath;
-          if (!existsSync(target)) return true;
+          if (!existsSync(target)) {
+            return {
+              passed: true,
+              reason: `File '${target}' does not exist`
+            };
+          }
           const content = this.readFile(target);
-          return !content.includes(condition.value || '');
-        } catch {
-          return true;
+          const pattern = condition.value || '';
+          const passed = !content.includes(pattern);
+          return {
+            passed,
+            reason: passed 
+              ? `Pattern '${pattern}' not found in file`
+              : `Pattern '${pattern}' found in file`
+          };
+        } catch (error) {
+          return {
+            passed: true,
+            reason: `Error reading file (treated as not exists): ${error instanceof Error ? error.message : 'unknown error'}`
+          };
         }
+      }
 
-      case ConditionType.PATTERN_COUNT:
+      case ConditionType.PATTERN_COUNT: {
         try {
           const target = condition.target || targetPath;
-          if (!existsSync(target)) return false;
+          if (!existsSync(target)) {
+            return {
+              passed: false,
+              reason: `File '${target}' does not exist`
+            };
+          }
           const content = this.readFile(target);
           const pattern = condition.value || '';
           const count = content.split(pattern).length - 1;
-          return this.compareCount(count, condition.operator, condition.count || 0);
-        } catch {
-          return false;
+          const expectedCount = condition.count || 0;
+          const operator = condition.operator || ConditionOperator.EQUALS;
+          const passed = this.compareCount(count, operator, expectedCount);
+          return {
+            passed,
+            reason: passed 
+              ? `Pattern count ${count} ${this.getOperatorSymbol(operator)} ${expectedCount}`
+              : `Pattern count ${count} does not match ${this.getOperatorSymbol(operator)} ${expectedCount}`
+          };
+        } catch (error) {
+          return {
+            passed: false,
+            reason: `Error reading file: ${error instanceof Error ? error.message : 'unknown error'}`
+          };
         }
+      }
 
-      case ConditionType.FILE_EXISTS:
-        const existsTarget = condition.target || condition.value || '';
-        return existsSync(existsTarget);
+      case ConditionType.FILE_EXISTS: {
+        const target = condition.target || condition.value || '';
+        const passed = existsSync(target);
+        return {
+          passed,
+          reason: passed 
+            ? `File '${target}' exists`
+            : `File '${target}' does not exist`
+        };
+      }
 
-      case ConditionType.FILE_NOT_EXISTS:
-        const notExistsTarget = condition.target || condition.value || '';
-        return !existsSync(notExistsTarget);
+      case ConditionType.FILE_NOT_EXISTS: {
+        const target = condition.target || condition.value || '';
+        const passed = !existsSync(target);
+        return {
+          passed,
+          reason: passed 
+            ? `File '${target}' does not exist`
+            : `File '${target}' exists`
+        };
+      }
 
       default:
-        return true;
+        return {
+          passed: true,
+          reason: 'No condition specified'
+        };
+    }
+  }
+
+  private static getOperatorSymbol(operator: ConditionOperator): string {
+    switch (operator) {
+      case ConditionOperator.EQUALS: return '==';
+      case ConditionOperator.NOT_EQUALS: return '!=';
+      case ConditionOperator.GREATER_THAN: return '>';
+      case ConditionOperator.LESS_THAN: return '<';
+      case ConditionOperator.GREATER_OR_EQUAL: return '>=';
+      case ConditionOperator.LESS_OR_EQUAL: return '<=';
+      default: return '==';
     }
   }
 
@@ -271,36 +372,74 @@ export class ModifierResource {
     group: ConditionGroup,
     context: ModifierContext,
     targetPath: string
-  ): boolean {
+  ): { passed: boolean; results: ConditionEvaluationResult[] } {
     const logic = group.logic || LogicOperator.AND;
     const results = group.conditions.map(condition => 
       this.evaluateCondition(condition, context, targetPath)
     );
 
-    return logic === LogicOperator.AND
-      ? results.every(r => r)
-      : results.some(r => r);
+    const passed = logic === LogicOperator.AND
+      ? results.every(r => r.passed)
+      : results.some(r => r.passed);
+
+    return { passed, results };
   }
 
   public static shouldExecuteInstruction(
     instruction: ModifierInstruction,
     context: ModifierContext
-  ): boolean {
-    if (!instruction.condition) return true;
+  ): { should: boolean; results?: ConditionEvaluationResult[]; logic?: LogicOperator } {
+    if (!instruction.condition) {
+      return { should: true };
+    }
 
-    return this.evaluateConditionGroup(
+    const evaluation = this.evaluateConditionGroup(
       instruction.condition,
       context,
       instruction.path
     );
+
+    return { 
+      should: evaluation.passed, 
+      results: evaluation.results,
+      logic: instruction.condition.logic || LogicOperator.AND
+    };
   }
 
   public static processInstruction(
     instruction: ModifierInstruction,
-    context: ModifierContext
+    context: ModifierContext,
+    instructionIndex: number
   ): boolean {
-    if (!this.shouldExecuteInstruction(instruction, context)) {
+    const verbose = context.verbose || false;
+    
+    if (verbose) {
+      Logger.newLine();
+      Logger.item(`Instruction #${instructionIndex + 1}:`, 'info');
+      Logger.listItem(`Action: ${instruction.action}`);
+      Logger.listItem(`Target: ${instruction.path}`);
+    }
+
+    const evaluation = this.shouldExecuteInstruction(instruction, context);
+
+    if (instruction.condition && verbose) {
+      Logger.listItem(`Conditions (${evaluation.logic || 'AND'} logic):`);
+      evaluation.results?.forEach((result, idx) => {
+        const symbol = result.passed ? '✓' : '✗';
+        const color = result.passed ? 'success' : 'error';
+        Logger.item(`  ${symbol} Condition #${idx + 1}: ${result.reason}`, color);
+      });
+    }
+
+    if (!evaluation.should) {
+      if (verbose) {
+        Logger.item('Result: SKIPPED', 'warning');
+      }
       return false;
+    }
+
+    if (verbose) {
+      Logger.item('Result: EXECUTING', 'success');
     }
 
     const { 
@@ -314,51 +453,62 @@ export class ModifierResource {
       propValue 
     } = instruction;
 
-    switch (action) {
-      case ModifierAction.CREATE_FILE:
-        if (!content) throw new Error('Content is required for CREATE_FILE action');
-        this.createFile(filePath, content);
-        break;
+    try {
+      switch (action) {
+        case ModifierAction.CREATE_FILE:
+          if (!content) throw new Error('Content is required for CREATE_FILE action');
+          this.createFile(filePath, content);
+          break;
 
-      case ModifierAction.DELETE_FILE:
-        this.deleteFile(filePath);
-        break;
+        case ModifierAction.DELETE_FILE:
+          this.deleteFile(filePath);
+          break;
 
-      case ModifierAction.INSERT_IMPORT:
-        if (!content) throw new Error('Content is required for INSERT_IMPORT action');
-        this.insertImport(filePath, content);
-        break;
+        case ModifierAction.INSERT_IMPORT:
+          if (!content) throw new Error('Content is required for INSERT_IMPORT action');
+          this.insertImport(filePath, content);
+          break;
 
-      case ModifierAction.INSERT_AFTER:
-        if (!pattern || !content) throw new Error('Pattern and content are required for INSERT_AFTER action');
-        this.insertAfter(filePath, pattern, content);
-        break;
+        case ModifierAction.INSERT_AFTER:
+          if (!pattern || !content) throw new Error('Pattern and content are required for INSERT_AFTER action');
+          this.insertAfter(filePath, pattern, content);
+          break;
 
-      case ModifierAction.INSERT_BEFORE:
-        if (!pattern || !content) throw new Error('Pattern and content are required for INSERT_BEFORE action');
-        this.insertBefore(filePath, pattern, content);
-        break;
+        case ModifierAction.INSERT_BEFORE:
+          if (!pattern || !content) throw new Error('Pattern and content are required for INSERT_BEFORE action');
+          this.insertBefore(filePath, pattern, content);
+          break;
 
-      case ModifierAction.REPLACE_CONTENT:
-        if (!pattern || replacement === undefined) throw new Error('Pattern and replacement are required for REPLACE_CONTENT action');
-        this.replaceContent(filePath, pattern, replacement);
-        break;
+        case ModifierAction.REPLACE_CONTENT:
+          if (!pattern || replacement === undefined) throw new Error('Pattern and replacement are required for REPLACE_CONTENT action');
+          this.replaceContent(filePath, pattern, replacement);
+          break;
 
-      case ModifierAction.APPEND_TO_FILE:
-        if (!content) throw new Error('Content is required for APPEND_TO_FILE action');
-        this.appendToFile(filePath, content);
-        break;
+        case ModifierAction.APPEND_TO_FILE:
+          if (!content) throw new Error('Content is required for APPEND_TO_FILE action');
+          this.appendToFile(filePath, content);
+          break;
 
-      case ModifierAction.INSERT_PROP:
-        if (!componentName || !propName) throw new Error('ComponentName and propName are required for INSERT_PROP action');
-        this.insertProp(filePath, componentName, propName, propValue);
-        break;
+        case ModifierAction.INSERT_PROP:
+          if (!componentName || !propName) throw new Error('ComponentName and propName are required for INSERT_PROP action');
+          this.insertProp(filePath, componentName, propName, propValue);
+          break;
 
-      default:
-        throw new Error(`Unknown action: ${action}`);
+        default:
+          throw new Error(`Unknown action: ${action}`);
+      }
+
+      if (verbose) {
+        Logger.item('Status: COMPLETED', 'success');
+      }
+
+      return true;
+    } catch (error) {
+      if (verbose) {
+        Logger.item(`Status: FAILED - ${error instanceof Error ? error.message : 'unknown error'}`, 'error');
+      }
+      throw error;
     }
-
-    return true;
   }
 
   public static processInstructions(
@@ -368,11 +518,25 @@ export class ModifierResource {
     let executed = 0;
     let skipped = 0;
 
-    for (const instruction of instructions) {
-      if (this.processInstruction(instruction, context)) {
-        executed++;
-      } else {
+    const verbose = context.verbose || false;
+
+    if (verbose) {
+      Logger.item(`Total instructions: ${instructions.length}`, 'info');
+    }
+
+    for (let i = 0; i < instructions.length; i++) {
+      const instruction = instructions[i];
+      try {
+        if (this.processInstruction(instruction, context, i)) {
+          executed++;
+        } else {
+          skipped++;
+        }
+      } catch (error) {
         skipped++;
+        if (verbose) {
+          Logger.error(`Instruction #${i + 1} failed: ${error instanceof Error ? error.message : 'unknown error'}`);
+        }
       }
     }
 
