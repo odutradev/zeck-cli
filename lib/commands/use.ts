@@ -296,12 +296,8 @@ export class UseCommand {
 
   private async processModules(destination: string, modules: Module[], verbose: boolean): Promise<void> {
     const moduleNames = modules.map(m => m.name);
-    const context: ModifierContext = {
-      selectedModules: moduleNames,
-      projectRoot: destination,
-      verbose
-    };
-
+    const projectName = destination.split('/').pop() || 'unknown';
+    
     for (const module of modules) {
       try {
         if (verbose) {
@@ -331,7 +327,15 @@ export class UseCommand {
           condition: inst.condition
         }));
 
-        const result = ModifierResource.processInstructions(instructions, context);
+        const context: ModifierContext = {
+          selectedModules: moduleNames,
+          projectRoot: destination,
+          projectName,
+          moduleName: module.name,
+          verbose
+        };
+
+        const result = await ModifierResource.processInstructions(instructions, context);
         
         if (!verbose) {
           if (result.skipped > 0) {
