@@ -1,6 +1,7 @@
 import { readFileSync, writeFileSync, unlinkSync, existsSync, mkdirSync } from 'fs';
 import { dirname } from 'path';
 import { Logger } from './logger.js';
+import { InstructionLogResource, InstructionLog } from './instructionLog.js';
 
 export enum ModifierAction {
   CREATE_FILE = 'CREATE_FILE',
@@ -65,6 +66,8 @@ export interface ModifierInstruction {
 export interface ModifierContext {
   selectedModules: string[];
   projectRoot: string;
+  projectName?: string;
+  moduleName?: string;
   verbose?: boolean;
 }
 
@@ -406,11 +409,55 @@ export class ModifierResource {
     };
   }
 
-  public static processInstruction(
+  private static async saveInstructionLog(
+    instruction: ModifierInstruction,
+    context: ModifierContext,
+    instructionIndex: number,
+    status: 'success' | 'skipped' | 'failed',
+    error?: string,
+    conditionResults?: ConditionEvaluationResult[]
+  ): Promise<string> {
+    const timestamp = Date.now();
+    const projectName = context.projectName || 'unknown';
+    const moduleName = context.moduleName || 'unknown';
+    
+    const hash = InstructionLogResource.generateHash(
+      projectName,
+      moduleName,
+      instructionIndex,
+      timestamp
+    );
+
+    const log: InstructionLog = {
+      hash,
+      timestamp,
+      projectName,
+      moduleName,
+      instructionIndex,
+      instruction: {
+        path: instruction.path,
+        action: instruction.action,
+        content: instruction.content,
+        pattern: instruction.pattern,
+        replacement: instruction.replacement,
+        componentName: instruction.componentName,
+        propName: instruction.propName,
+        propValue: instruction.propValue
+      },
+      status,
+      error,
+      conditions: conditionResults
+    };
+
+    await InstructionLogResource.saveLog(log);
+    return hash;
+  }
+
+  public static async processInstruction(
     instruction: ModifierInstruction,
     context: ModifierContext,
     instructionIndex: number
-  ): boolean {
+  ): Promise<boolean> {
     const verbose = context.verbose || false;
     
     if (verbose) {
@@ -434,6 +481,17 @@ export class ModifierResource {
     if (!evaluation.should) {
       if (verbose) {
         Logger.item('Result: SKIPPED', 'warning');
+        
+        const hash = await this.saveInstructionLog(
+          instruction,
+          context,
+          instructionIndex,
+          'skipped',
+          undefined,
+          evaluation.results
+        );
+        
+        Logger.item(`Log Hash: ${hash}`, 'dim');
       }
       return false;
     }
@@ -500,21 +558,46 @@ export class ModifierResource {
 
       if (verbose) {
         Logger.item('Status: COMPLETED', 'success');
+        
+        const hash = await this.saveInstructionLog(
+          instruction,
+          context,
+          instructionIndex,
+          'success',
+          undefined,
+          evaluation.results
+        );
+        
+        Logger.item(`Log Hash: ${hash}`, 'dim');
       }
 
       return true;
     } catch (error) {
+      const errorMessage = error instanceof Error ? error.message : 'unknown error';
+      
       if (verbose) {
-        Logger.item(`Status: FAILED - ${error instanceof Error ? error.message : 'unknown error'}`, 'error');
+        Logger.item(`Status: FAILED - ${errorMessage}`, 'error');
+        
+        const hash = await this.saveInstructionLog(
+          instruction,
+          context,
+          instructionIndex,
+          'failed',
+          errorMessage,
+          evaluation.results
+        );
+        
+        Logger.item(`Log Hash: ${hash}`, 'error');
       }
+      
       throw error;
     }
   }
 
-  public static processInstructions(
+  public static async processInstructions(
     instructions: ModifierInstruction[],
     context: ModifierContext
-  ): { executed: number; skipped: number } {
+  ): Promise<{ executed: number; skipped: number }> {
     let executed = 0;
     let skipped = 0;
 
@@ -527,7 +610,7 @@ export class ModifierResource {
     for (let i = 0; i < instructions.length; i++) {
       const instruction = instructions[i];
       try {
-        if (this.processInstruction(instruction, context, i)) {
+        if (await this.processInstruction(instruction, context, i)) {
           executed++;
         } else {
           skipped++;
