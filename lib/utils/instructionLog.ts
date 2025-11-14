@@ -82,7 +82,7 @@ export class InstructionLogResource {
         }
       })
       .filter((log: InstructionLog | null): log is InstructionLog => log !== null)
-      .sort((a, b) => b.timestamp - a.timestamp);
+      .sort((a: any, b: any) => b.timestamp - a.timestamp);
   }
 
   public static async clearOldLogs(maxAgeDays: number = 30): Promise<number> {
